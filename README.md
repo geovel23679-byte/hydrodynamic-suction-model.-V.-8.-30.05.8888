@@ -10,5 +10,6 @@ To stage, commit, and push changes:
 ```bash
 git add .
 git commit -m "HSM v1.0.0"
-git p
-```g
+git push
+
+
