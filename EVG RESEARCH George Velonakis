@@ -1,0 +1,971 @@
+
+
+#!/usr/bin/env python3
+# -*- coding: utf-8 -*-
+
+"""
+====================================================================
+EVG INFINITY v1.0
+EVANGELos VELONAKIS GEORGE
+INTEGRATED MARITIME RESEARCH PROTOTYPE
+====================================================================
+
+Researcher: Giorgos Velonakis
+
+MODULES
+-------
+1. Emergency Stability Activation
+2. Temporal Stability and Survival Window
+3. Progressive Flooding (simplified proxy)
+4. Ship Stability Indicator (not a naval stability solver)
+5. Ship Motion Scenario
+6. Free-Fall Lifeboat Scenario
+7. Stern Hydrodynamic Interaction (conceptual placeholder)
+8. Buoyancy and Relative Motion (simplified)
+9. Monte Carlo Simulation
+10. Statistical Analysis
+11. Sensitivity Screening
+12. CSV Research Export
+
+CORE EQUATION
+-------------
+TS = TTC - TTE - SAFETY_RESERVE
+
+TTC = Time to Critical condition
+TTE = Assumed time to clearance
+TS  = Available time margin
+
+IMPORTANT
+---------
+This is a research prototype, NOT a validated physical model.
+
+It does not calculate:
+- Real ship GZ curves
+- SOLAS-compliant stability
+- Actual progressive flooding
+- Validated stern flow or CFD
+- Real lifeboat trajectories
+- Actual probability of survival
+
+All sampled values are illustrative assumptions.
+
+Never use this program for operational decisions,
+evacuation authorization or emergency instructions.
+Follow the Master's orders and approved procedures.
+====================================================================
+"""
+
+import csv
+import json
+import math
+import random
+import statistics
+
+from dataclasses import dataclass, asdict
+from pathlib import Path
+
+
+# ================================================================
+# 1. CONFIGURATION
+# ================================================================
+
+@dataclass
+class EVGConfig:
+
+    simulations: int = 1000
+    seed: int = 20261113
+
+    ship_length_m: float = 300.0
+
+    stability_inadequate: bool = True
+
+    # Illustrative parameters only
+
+    gm_initial_range: tuple = (0.30, 1.50)
+    gm_critical_range: tuple = (0.05, 0.20)
+
+    gm_loss_rate_range: tuple = (0.0005, 0.005)
+
+    flooding_rate_range: tuple = (0.0, 200.0)
+
+    heel_initial_range: tuple = (0.0, 25.0)
+
+    ttc_minimum: float = 5.0
+
+    distance_range: tuple = (30.0, 150.0)
+
+    escape_speed_range: tuple = (1.0, 4.0)
+
+    response_delay_range: tuple = (5.0, 30.0)
+
+    stern_current_range: tuple = (0.0, 2.0)
+
+    safety_reserve_s: float = 10.0
+
+    seawater_density: float = 1025.0
+
+    gravity: float = 9.81
+
+    output_csv: str = "EVG_INFINITY_results.csv"
+
+    output_json: str = "EVG_INFINITY_summary.json"
+
+
+# ================================================================
+# 2. RESULT STRUCTURE
+# ================================================================
+
+@dataclass
+class EVGResult:
+
+    scenario: int
+
+    initial_GM_m: float
+    critical_GM_m: float
+    GM_loss_rate_m_s: float
+
+    flooding_rate_m3_min: float
+
+    initial_heel_deg: float
+
+    TTC_s: float
+
+    distance_m: float
+    escape_speed_m_s: float
+    stern_current_m_s: float
+    response_delay_s: float
+
+    effective_speed_m_s: float
+
+    TTE_s: float
+    safety_reserve_s: float
+    TS_s: float
+
+    time_state: str
+
+    stability_warning: bool
+
+
+# ================================================================
+# 3. INPUT VALIDATION
+# ================================================================
+
+def validate_config(config):
+
+    if config.simulations < 1:
+        raise ValueError("Simulation count must be positive.")
+
+    if config.ship_length_m <= 0:
+        raise ValueError("Ship length must be positive.")
+
+    if config.seawater_density <= 0:
+        raise ValueError("Water density must be positive.")
+
+    if config.gravity <= 0:
+        raise ValueError("Gravity must be positive.")
+
+    if config.safety_reserve_s < 0:
+        raise ValueError("Safety reserve cannot be negative.")
+
+    ranges = [
+        config.gm_initial_range,
+        config.gm_critical_range,
+        config.gm_loss_rate_range,
+        config.flooding_rate_range,
+        config.heel_initial_range,
+        config.distance_range,
+        config.escape_speed_range,
+        config.response_delay_range,
+        config.stern_current_range,
+    ]
+
+    for low, high in ranges:
+
+        if low < 0 or high < low:
+            raise ValueError("Invalid parameter range.")
+
+    if config.escape_speed_range[0] <= 0:
+        raise ValueError("Escape speed must be positive.")
+
+
+# ================================================================
+# 4. EVG ACTIVATION
+# ================================================================
+
+def activate_evg(stability_inadequate):
+
+    print("\n" + "=" * 65)
+    print("             EVG INFINITY ACTIVATION")
+    print("=" * 65)
+
+    if stability_inadequate:
+
+        print("\n[EVG RESEARCH WARNING ACTIVATED]")
+
+        print("Condition: INADEQUATE STABILITY DECLARED")
+
+        print("Temporal research analysis initiated.")
+
+        print("Do not wait for simulation results.")
+
+        print("Real emergency procedures take priority.")
+
+        return True
+
+    print("\n[EVG STANDBY]")
+
+    return False
+
+
+# ================================================================
+# 5. SIMPLIFIED STABILITY DEGRADATION
+# ================================================================
+
+def calculate_stability_scenario(
+    rng,
+    config
+):
+
+    gm_initial = rng.uniform(
+        *config.gm_initial_range
+    )
+
+    gm_critical = rng.uniform(
+        *config.gm_critical_range
+    )
+
+    gm_loss_rate = rng.uniform(
+        *config.gm_loss_rate_range
+    )
+
+    flooding_rate = rng.uniform(
+        *config.flooding_rate_range
+    )
+
+    initial_heel = rng.uniform(
+        *config.heel_initial_range
+    )
+
+    # Simplified linear GM degradation proxy.
+    # This is NOT a physical flooding or stability solver.
+
+    if gm_initial <= gm_critical:
+
+        ttc = config.ttc_minimum
+
+    elif gm_loss_rate > 0:
+
+        ttc = (
+            gm_initial - gm_critical
+        ) / gm_loss_rate
+
+    else:
+
+        ttc = float("inf")
+
+    ttc = max(
+        config.ttc_minimum,
+        ttc
+    )
+
+    return {
+        "gm_initial": gm_initial,
+        "gm_critical": gm_critical,
+        "gm_loss_rate": gm_loss_rate,
+        "flooding_rate": flooding_rate,
+        "initial_heel": initial_heel,
+        "ttc": ttc
+    }
+
+
+# ================================================================
+# 6. SIMPLIFIED SHIP MOTION SCENARIO
+# ================================================================
+
+def calculate_ship_motion(
+    rng,
+    config
+):
+
+    # Illustrative angular rate and heel.
+    # Not a ship-motion dynamics solution.
+
+    angular_rate = rng.uniform(
+        0.0,
+        0.05
+    )
+
+    return {
+        "angular_rate_rad_s": angular_rate
+    }
+
+
+# ================================================================
+# 7. LIFEBOAT SCENARIO
+# ================================================================
+
+def calculate_lifeboat_scenario(
+    rng,
+    config
+):
+
+    distance = rng.uniform(
+        *config.distance_range
+    )
+
+    escape_speed = rng.uniform(
+        *config.escape_speed_range
+    )
+
+    response_delay = rng.uniform(
+        *config.response_delay_range
+    )
+
+    stern_current = rng.uniform(
+        *config.stern_current_range
+    )
+
+    return {
+        "distance": distance,
+        "escape_speed": escape_speed,
+        "response_delay": response_delay,
+        "stern_current": stern_current
+    }
+
+
+# ================================================================
+# 8. CONCEPTUAL STERN INTERACTION
+# ================================================================
+
+def calculate_relative_motion(
+    escape_speed,
+    stern_current
+):
+
+    # One-dimensional conceptual screening only.
+    # Does not calculate real stern flow, vortices or suction.
+
+    effective_speed = (
+        escape_speed - stern_current
+    )
+
+    return effective_speed
+
+
+# ================================================================
+# 9. TEMPORAL SURVIVAL WINDOW
+# ================================================================
+
+def calculate_temporal_window(
+    ttc,
+    distance,
+    effective_speed,
+    response_delay,
+    safety_reserve
+):
+
+    if effective_speed <= 0:
+
+        tte = float("inf")
+
+        ts = float("-inf")
+
+        state = "NO_POSITIVE_CLEARANCE_SPEED"
+
+    else:
+
+        tte = (
+            response_delay
+            + distance / effective_speed
+        )
+
+        ts = (
+            ttc
+            - tte
+            - safety_reserve
+        )
+
+        if ts > 0:
+
+            state = "POSITIVE"
+
+        elif ts < 0:
+
+            state = "NEGATIVE"
+
+        else:
+
+            state = "ZERO_MARGIN"
+
+    return tte, ts, state
+
+
+# ================================================================
+# 10. SINGLE EVG SCENARIO
+# ================================================================
+
+def run_single_scenario(
+    rng,
+    index,
+    config
+):
+
+    stability = calculate_stability_scenario(
+        rng,
+        config
+    )
+
+    ship_motion = calculate_ship_motion(
+        rng,
+        config
+    )
+
+    lifeboat = calculate_lifeboat_scenario(
+        rng,
+        config
+    )
+
+    effective_speed = calculate_relative_motion(
+        lifeboat["escape_speed"],
+        lifeboat["stern_current"]
+    )
+
+    tte, ts, state = calculate_temporal_window(
+
+        stability["ttc"],
+
+        lifeboat["distance"],
+
+        effective_speed,
+
+        lifeboat["response_delay"],
+
+        config.safety_reserve_s
+    )
+
+    return EVGResult(
+
+        scenario=index,
+
+        initial_GM_m=stability["gm_initial"],
+
+        critical_GM_m=stability["gm_critical"],
+
+        GM_loss_rate_m_s=stability["gm_loss_rate"],
+
+        flooding_rate_m3_min=stability["flooding_rate"],
+
+        initial_heel_deg=stability["initial_heel"],
+
+        TTC_s=stability["ttc"],
+
+        distance_m=lifeboat["distance"],
+
+        escape_speed_m_s=lifeboat["escape_speed"],
+
+        stern_current_m_s=lifeboat["stern_current"],
+
+        response_delay_s=lifeboat["response_delay"],
+
+        effective_speed_m_s=effective_speed,
+
+        TTE_s=tte,
+
+        safety_reserve_s=config.safety_reserve_s,
+
+        TS_s=ts,
+
+        time_state=state,
+
+        stability_warning=True
+    )
+
+
+# ================================================================
+# 11. MONTE CARLO ENGINE
+# ================================================================
+
+def run_monte_carlo(config):
+
+    rng = random.Random(
+        config.seed
+    )
+
+    results = []
+
+    for index in range(
+        1,
+        config.simulations + 1
+    ):
+
+        result = run_single_scenario(
+            rng,
+            index,
+            config
+        )
+
+        results.append(result)
+
+    return results
+
+
+# ================================================================
+# 12. STATISTICAL FUNCTIONS
+# ================================================================
+
+def percentile(values, p):
+
+    if not values:
+
+        return float("nan")
+
+    ordered = sorted(values)
+
+    position = (
+        (len(ordered) - 1)
+        * p / 100.0
+    )
+
+    lower = int(position)
+
+    upper = min(
+        lower + 1,
+        len(ordered) - 1
+    )
+
+    fraction = position - lower
+
+    return (
+        ordered[lower] * (1 - fraction)
+        + ordered[upper] * fraction
+    )
+
+
+# ================================================================
+# 13. RESULT ANALYSIS
+# ================================================================
+
+def analyze_results(results):
+
+    total = len(results)
+
+    positive = [
+        r for r in results
+        if r.TS_s > 0
+    ]
+
+    negative = [
+        r for r in results
+        if r.TS_s < 0
+    ]
+
+    nonfinite = [
+        r for r in results
+        if not math.isfinite(r.TS_s)
+    ]
+
+    finite = [
+        r for r in results
+        if math.isfinite(r.TS_s)
+    ]
+
+    ts_values = [
+        r.TS_s for r in finite
+    ]
+
+    ttc_values = [
+        r.TTC_s for r in results
+        if math.isfinite(r.TTC_s)
+    ]
+
+    tte_values = [
+        r.TTE_s for r in results
+        if math.isfinite(r.TTE_s)
+    ]
+
+    stats = {
+
+        "simulations": total,
+
+        "positive_count": len(positive),
+
+        "negative_count": len(negative),
+
+        "nonfinite_count": len(nonfinite),
+
+        "positive_fraction": (
+            len(positive) / total
+        ),
+
+        "negative_fraction": (
+            len(negative) / total
+        ),
+
+        "median_TTC": (
+            statistics.median(ttc_values)
+            if ttc_values else None
+        ),
+
+        "median_TTE": (
+            statistics.median(tte_values)
+            if tte_values else None
+        ),
+
+        "median_TS": (
+            statistics.median(ts_values)
+            if ts_values else None
+        ),
+
+        "mean_TS": (
+            statistics.mean(ts_values)
+            if ts_values else None
+        ),
+
+        "std_TS": (
+            statistics.stdev(ts_values)
+            if len(ts_values) > 1 else 0
+        ),
+
+        "p05_TS": percentile(ts_values, 5),
+
+        "p50_TS": percentile(ts_values, 50),
+
+        "p95_TS": percentile(ts_values, 95),
+
+    }
+
+    return stats
+
+
+# ================================================================
+# 14. SENSITIVITY SCREENING
+# ================================================================
+
+def calculate_sensitivity(results):
+
+    variables = [
+
+        "initial_GM_m",
+
+        "GM_loss_rate_m_s",
+
+        "flooding_rate_m3_min",
+
+        "initial_heel_deg",
+
+        "stern_current_m_s",
+
+        "distance_m",
+
+        "escape_speed_m_s",
+
+        "response_delay_s"
+
+    ]
+
+    finite_results = [
+        r for r in results
+        if math.isfinite(r.TS_s)
+    ]
+
+    if len(finite_results) < 3:
+
+        return {}
+
+    ts = [
+        r.TS_s for r in finite_results
+    ]
+
+    mean_ts = statistics.mean(ts)
+
+    sensitivity = {}
+
+    for variable in variables:
+
+        values = [
+            getattr(r, variable)
+            for r in finite_results
+        ]
+
+        mean_x = statistics.mean(values)
+
+        numerator = sum(
+            (x - mean_x) * (y - mean_ts)
+            for x, y in zip(values, ts)
+        )
+
+        denominator_x = math.sqrt(
+            sum(
+                (x - mean_x) ** 2
+                for x in values
+            )
+        )
+
+        denominator_y = math.sqrt(
+            sum(
+                (y - mean_ts) ** 2
+                for y in ts
+            )
+        )
+
+        if denominator_x == 0 or denominator_y == 0:
+
+            correlation = 0.0
+
+        else:
+
+            correlation = (
+                numerator
+                / (denominator_x * denominator_y)
+            )
+
+        sensitivity[variable] = correlation
+
+    return sensitivity
+
+
+# ================================================================
+# 15. REPORT
+# ================================================================
+
+def print_report(stats, sensitivity):
+
+    print("\n" + "=" * 65)
+
+    print("                 EVG INFINITY v1.0")
+
+    print("        TEMPORAL STABILITY & SURVIVAL WINDOW")
+
+    print("=" * 65)
+
+    print("\nRESEARCHER: GIORGOS VELONAKIS")
+
+    print("\n--- MONTE CARLO ---")
+
+    print("Scenarios:", stats["simulations"])
+
+    print("\n--- TEMPORAL ANALYSIS ---")
+
+    print("Median TTC:", stats["median_TTC"])
+
+    print("Median TTE:", stats["median_TTE"])
+
+    print("Median TS:", stats["median_TS"])
+
+    print("Mean TS:", stats["mean_TS"])
+
+    print("Standard deviation TS:", stats["std_TS"])
+
+    print("\n--- TIME WINDOW DISTRIBUTION ---")
+
+    print("Positive:", stats["positive_count"])
+
+    print("Negative:", stats["negative_count"])
+
+    print("Non-finite:", stats["nonfinite_count"])
+
+    print(
+        "Positive fraction:",
+        round(
+            stats["positive_fraction"] * 100,
+            2
+        ),
+        "%"
+    )
+
+    print("\n--- TS PERCENTILES ---")
+
+    print("5%:", stats["p05_TS"])
+
+    print("50%:", stats["p50_TS"])
+
+    print("95%:", stats["p95_TS"])
+
+    print("\n--- SENSITIVITY SCREENING ---")
+
+    for name, value in sensitivity.items():
+
+        print(
+            name,
+            ":",
+            round(value, 4)
+        )
+
+    print("\n--- MODEL LIMITATIONS ---")
+
+    print("Stability solver: NOT INCLUDED")
+
+    print("Progressive flooding: PLACEHOLDER")
+
+    print("CFD stern flow: NOT INCLUDED")
+
+    print("Lifeboat dynamics: NOT VALIDATED")
+
+    print("Survival probability: NOT ESTABLISHED")
+
+    print("\n" + "=" * 65)
+
+
+# ================================================================
+# 16. CSV EXPORT
+# ================================================================
+
+def export_csv(results, filename):
+
+    if not results:
+
+        return
+
+    with open(
+        filename,
+        "w",
+        newline="",
+        encoding="utf-8"
+    ) as file:
+
+        writer = csv.DictWriter(
+
+            file,
+
+            fieldnames=list(
+                asdict(results[0]).keys()
+            )
+        )
+
+        writer.writeheader()
+
+        for result in results:
+
+            writer.writerow(
+                asdict(result)
+            )
+
+    print("\nCSV:", Path(filename).resolve())
+
+
+# ================================================================
+# 17. JSON SUMMARY
+# ================================================================
+
+def export_json(stats, sensitivity, filename):
+
+    report = {
+
+        "model": "EVG INFINITY v1.0",
+
+        "researcher": "Giorgos Velonakis",
+
+        "results": stats,
+
+        "sensitivity_screening": sensitivity,
+
+        "validation_status": "NOT VALIDATED",
+
+        "disclaimer": (
+            "Illustrative research prototype. "
+            "Not for operational maritime decisions."
+        )
+    }
+
+    with open(
+        filename,
+        "w",
+        encoding="utf-8"
+    ) as file:
+
+        json.dump(
+            report,
+            file,
+            indent=4,
+            ensure_ascii=False,
+            default=str
+        )
+
+    print("\nJSON:", Path(filename).resolve())
+
+
+# ================================================================
+# 18. MAIN EVG ENGINE
+# ================================================================
+
+def run_evg(config=None):
+
+    if config is None:
+
+        config = EVGConfig()
+
+    validate_config(config)
+
+    activated = activate_evg(
+        config.stability_inadequate
+    )
+
+    if not activated:
+
+        return None
+
+    print("\nStarting EVG INFINITY...")
+
+    print("Monte Carlo engine initializing...")
+
+    results = run_monte_carlo(config)
+
+    print("Simulation completed.")
+
+    stats = analyze_results(results)
+
+    sensitivity = calculate_sensitivity(
+        results
+    )
+
+    print_report(
+        stats,
+        sensitivity
+    )
+
+    export_csv(
+        results,
+        config.output_csv
+    )
+
+    export_json(
+        stats,
+        sensitivity,
+        config.output_json
+    )
+
+    print("\nEVG INFINITY COMPLETED.")
+
+    return {
+
+        "results": results,
+
+        "statistics": stats,
+
+        "sensitivity": sensitivity
+
+    }
+
+
+# ================================================================
+# 19. EXECUTION
+# ================================================================
+
+if __name__ == "__main__":
+
+    CONFIG = EVGConfig(
+
+        simulations=1000,
+
+        seed=20261113,
+
+        ship_length_m=300.0,
+
+        stability_inadequate=True,
+
+        safety_reserve_s=10.0
+
+    )
+
+    EVG_OUTPUT = run_evg(CONFIG)
+
